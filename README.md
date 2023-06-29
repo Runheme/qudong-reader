@@ -1,2 +1,1 @@
-# reader-via
-via的一个项目组件
+This library provides an API and typing for reading VIA keyboard definition files.
