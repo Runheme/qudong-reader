@@ -3,9 +3,9 @@
   "version": "1.7.0",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/the-via/reader.git"
+    "url": "git+ssh://git@github.com/Runheme/qudong-reader.git"
   },
-  "author": "Olivia <ofbriggs@gmail.com>",
+  "author": "Olivia <ofbrigg@gmail.com>", //s
   "license": "GPL-3.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -37,9 +37,9 @@
   },
   "description": "\"API and typing for reading VIA keyboard definitions\"",
   "bugs": {
-    "url": "https://github.com/the-via/reader/issues"
+    "url": "https://github.com/Runheme/qudong-reader/issues"
   },
-  "homepage": "https://github.com/the-via/reader#readme",
+  "homepage": "https://github.com/Runheme/qudong-reader#readme",
   "keywords": [
     "via",
     "qmk",
