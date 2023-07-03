@@ -8,8 +8,7 @@
     "lib": [
       "esnext",
       "es2019",
-      "es2019.array",
-      "WebWorker"
+      "es2019.array"
     ] /* Specify library files to be included in the compilation. */,
     // "allowJs": true,                       /* Allow javascript files to be compiled. */
     // "checkJs": true,                       /* Report errors in .js files. */

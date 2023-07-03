@@ -42,7 +42,7 @@ export type Toggle = {
 
 export type Dropdown = {
   type: 'dropdown';
-  options: string[] | [string, number, ...number[]][];
+  options: [string, number, ...number[]][];
 };
 
 export type Range = {
@@ -59,22 +59,14 @@ export type Color = {
   type: 'color';
 };
 
-export type ColorPalette = {
-  type: 'color-palette';
-};
-
 // An atomic unit that represents a renderable unit - usually a Control
 type Item<A> = Label & Conditional & ByteLength & A;
 type Control = Keycode | Color | Toggle | Dropdown | Range;
-type UniqueControl = ColorPalette;
-// The standard VIA control
 export type VIAControlItem = Control & Item<BindableContent>;
-export type VIAUniqueControlItem = UniqueControl & Item<BindableContent>;
-// For displaying text like headers or static springs
 export type VIATextItem = Item<TextContent>;
 
 // VIA Groups
-export type VIAItem = VIATextItem | VIAControlItem | VIAUniqueControlItem;
+export type VIAItem = VIATextItem | VIAControlItem;
 export type VIAItemSlice = Group<VIAItem>;
 export type VIASubmenuSlice = Group<VIASubmenu>;
 export type VIASubmenu = Label & Group<VIAItem | VIAItemSlice>;

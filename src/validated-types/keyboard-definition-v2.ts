@@ -1,2 +1,2 @@
-import {KeyboardDefinitionV2} from '../types.v2';
+import {KeyboardDefinitionV2} from '../types';
 export default KeyboardDefinitionV2;

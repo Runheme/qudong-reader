@@ -1,89 +1,47 @@
-import {ThemeDefinition} from './types.common';
+import {ThemeDefinition} from './types';
 export const THEMES: {[theme: string]: ThemeDefinition} = {
-  PROTOLIVIA: {
+  PBT_HEAVY_INDUSTRY: {
     alpha: {
-      c: '#505557',
-      t: '#aeb0b0',
+      c: '#f7f2ea',
+      t: '#000000'
     },
     mod: {
-      c: '#6b7173',
-      t: '#aeb0b0',
+      c: '#C2C7CA',
+      t: '#000000'
     },
     accent: {
-      c: '#afb0ae',
-      t: '#505557',
-    },
+      c: '#FFC700',
+      t: '#000000'
+    }
   },
   OLIVIA: {
     alpha: {
       c: '#f0f0f0',
-      t: '#363434',
+      t: '#363434'
     },
     mod: {
       c: '#363434',
-      t: '#E8C4B8',
+      t: '#E8C4B8'
     },
     accent: {
       c: '#E8C4B8',
-      t: '#363434',
-    },
+      t: '#363434'
+    }
   },
   OLIVIA_DARK: {
     alpha: {
       c: '#363434',
-      t: '#E8C4B8',
+      t: '#E8C4B8'
     },
     mod: {
       c: '#363434',
-      t: '#E8C4B8',
+      t: '#E8C4B8'
     },
     accent: {
       c: '#E8C4B8',
-      t: '#363434',
-    },
-  },
-  OLIVE: {
-    alpha: {
-      t: '#66665A',
-      c: '#D9D7C4',
-    },
-    mod: {
-      c: '#66665A',
-      t: '#9DA183',
-    },
-    accent: {
-      c: '#9DA183',
-      t: '#66665A',
-    },
-  },
-  OLIVE_DARK: {
-    alpha: {
-      c: '#66665A',
-      t: '#9DA183',
-    },
-    mod: {
-      c: '#66665A',
-      t: '#9DA183',
-    },
-    accent: {
-      c: '#9DA183',
-      t: '#66665A',
-    },
-  },
-  OLNY: {
-    alpha: {
-      c: '#c20018',
-      t: '#cfa174',
-    },
-    mod: {
-      c: '#c20018',
-      t: '#cfa174',
-    },
-    accent: {
-      t: '#c20018',
-      c: '#cfa174',
-    },
-  },
+      t: '#363434'
+    }
+  }
 };
 
 export const getTheme = () => THEMES.OLIVIA_DARK;

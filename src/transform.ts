@@ -1,91 +1,68 @@
-import validateV3 from './validated-types/keyboard-definition-v3.validator';
+import {kleLayoutToVIALayout} from './kle-parser';
+import validate from './validated-types/keyboard-definition.validator';
 import validateV2 from './validated-types/keyboard-definition-v2.validator';
-import {KeyboardDefinitionV3, VIADefinitionV3} from './types.v3';
 import {
+  KeyboardDefinition,
   KeyboardDefinitionV2,
-  LightingTypeDefinitionV2,
+  VIADefinition,
   VIADefinitionV2,
   VIALightingTypeDefinition,
-} from './types.v2';
+  LightingTypeDefinitionV2,
+  VIALayout
+} from './types';
 import {LightingPreset} from './lighting-presets';
-import {
-  validateCommonMenus,
-  validateKeyBounds,
-  validateLayouts,
-} from './validate';
+export {VIADefinition, KeyboardDefinition};
 
-export {VIADefinitionV3, KeyboardDefinitionV3};
-
-const getHexHint = (value: string) => {
-  const borkedHexPattern = /^[Oo]x/;
-  return value.match(borkedHexPattern)
-    ? `Did you mean '${value.replace(borkedHexPattern, '0x')}' instead?`
-    : '';
-};
-
-export const getVendorProductId = ({
+export function getVendorProductId({
   productId,
-  vendorId,
-}: Pick<KeyboardDefinitionV3, 'productId' | 'vendorId'>): number => {
-  if (vendorId.toUpperCase() === '0XFEED') {
-    throw new Error(`'0xFEED' is not a valid vendorId.`);
-  }
-
+  vendorId
+}: Pick<KeyboardDefinitionV2, 'productId' | 'vendorId'>): number {
   const parsedVendorId = parseInt(vendorId, 16);
   const parsedProductId = parseInt(productId, 16);
-
-  if (isNaN(parsedVendorId)) {
-    throw new Error(
-      `vendorId could not be parsed: '${vendorId}'. ${getHexHint(vendorId)}`
-    );
-  }
-
-  if (isNaN(parsedProductId)) {
-    throw new Error(
-      `productId could not be parsed: '${productId}'. ${getHexHint(productId)}`
-    );
-  }
-
   return parsedVendorId * 65536 + parsedProductId;
-};
+}
 
-export const keyboardDefinitionV3ToVIADefinitionV3 = (
-  definition: KeyboardDefinitionV3
-): VIADefinitionV3 => {
-  const {
-    name,
-    menus,
-    keycodes,
-    customKeycodes,
-    matrix,
-    layouts,
-    firmwareVersion,
-  } = validateV3(definition);
+export function validateLayouts(
+  layouts: KeyboardDefinitionV2['layouts']
+): VIALayout {
+  const {labels = [], keymap} = layouts;
+  const viaLayout = kleLayoutToVIALayout(keymap);
+  const missingLabels = labels.filter(
+    (_, idx) =>
+      viaLayout.optionKeys[idx] === undefined ||
+      viaLayout.optionKeys[idx][0] === undefined
+  );
+  if (missingLabels.length > 0) {
+    throw new Error(
+      `The KLE is missing the group keys for: ${missingLabels.join(',')}`
+    );
+  }
+  return viaLayout;
+}
 
-  const viaLayout = validateLayouts(layouts);
-  const {keymap, ...partialLayout} = layouts;
-  const viaLayouts = {
-    ...partialLayout,
-    ...viaLayout,
-  };
-  validateKeyBounds(matrix, viaLayouts);
-  validateCommonMenus(menus ?? []);
+export function validateKeyBounds(
+  matrix: VIADefinitionV2['matrix'],
+  layouts: VIADefinitionV2['layouts']
+) {
+  const {rows, cols} = matrix;
+  const optionKeys = Object.values(layouts.optionKeys).flatMap(group =>
+    Object.values(group).flat()
+  );
+  const oobKeys = layouts.keys
+    .concat(optionKeys)
+    .filter(({row, col}) => row >= rows || col >= cols);
+  if (oobKeys.length !== 0) {
+    throw new Error(
+      `The following keys reference a row or column outside of dimension defined in the matrix property: ${oobKeys
+        .map(({row, col}) => `(${row},${col})`)
+        .join(',')}`
+    );
+  }
+}
 
-  return {
-    name,
-    vendorProductId: getVendorProductId(definition),
-    firmwareVersion: firmwareVersion ?? 0,
-    menus: menus ?? [],
-    keycodes: keycodes ?? [],
-    customKeycodes,
-    matrix,
-    layouts: viaLayouts,
-  };
-};
-
-export const keyboardDefinitionV2ToVIADefinitionV2 = (
+export function keyboardDefinitionV2ToVIADefinitionV2(
   definition: KeyboardDefinitionV2
-): VIADefinitionV2 => {
+): VIADefinitionV2 {
   const {
     name,
     customFeatures,
@@ -93,14 +70,14 @@ export const keyboardDefinitionV2ToVIADefinitionV2 = (
     customKeycodes,
     lighting,
     matrix,
-    layouts,
+    layouts
   } = validateV2(definition);
 
-  const viaLayout = validateLayouts(layouts);
+  validateLayouts(layouts);
   const {keymap, ...partialLayout} = layouts;
   const viaLayouts = {
     ...partialLayout,
-    ...viaLayout,
+    ...kleLayoutToVIALayout(layouts.keymap)
   };
   validateKeyBounds(matrix, viaLayouts);
   return {
@@ -111,13 +88,49 @@ export const keyboardDefinitionV2ToVIADefinitionV2 = (
     customFeatures,
     customKeycodes,
     customMenus,
-    vendorProductId: getVendorProductId(definition),
+    vendorProductId: getVendorProductId(definition)
   };
-};
+}
 
-export const getLightingDefinition = (
+export function getLightingDefinition(
   definition: LightingTypeDefinitionV2
-): VIALightingTypeDefinition =>
-  typeof definition === 'string'
-    ? LightingPreset[definition]
-    : {...LightingPreset[definition.extends], ...definition};
+): VIALightingTypeDefinition {
+  if (typeof definition === 'string') {
+    return LightingPreset[definition];
+  } else {
+    return {...LightingPreset[definition.extends], ...definition};
+  }
+}
+
+export function keyboardDefinitionToVIADefinition(
+  definition: KeyboardDefinition
+): VIADefinition {
+  const {name, lighting, matrix} = validate(definition);
+  const layouts = Object.entries(definition.layouts).reduce(
+    (p, [k, v]) => ({...p, [k]: kleLayoutToVIALayout(v)}),
+    {}
+  );
+  return {
+    name,
+    lighting,
+    layouts,
+    matrix,
+    vendorProductId: getVendorProductId(definition)
+  };
+}
+
+export function generateVIADefinitionLookupMap(
+  definitions: KeyboardDefinition[]
+) {
+  return definitions
+    .map(keyboardDefinitionToVIADefinition)
+    .reduce((p, n) => ({...p, [n.vendorProductId]: n}), {});
+}
+
+export function generateVIADefinitionV2LookupMap(
+  definitions: KeyboardDefinitionV2[]
+) {
+  return definitions
+    .map(keyboardDefinitionV2ToVIADefinitionV2)
+    .reduce((p, n) => ({...p, [n.vendorProductId]: n}), {});
+}

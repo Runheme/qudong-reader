@@ -1,5 +1,5 @@
-import invariant from 'invariant';
-const inspect = JSON.stringify;
+const invariant = require('invariant');
+const inspect = require('util-inspect');
 import {
   Formatting,
   Cursor,
@@ -15,7 +15,9 @@ import {
   VIAKey,
   OptionalDimensions,
   KLEDimensions,
-} from './types.common';
+} from './types';
+import {SIGINT} from 'constants';
+import {cursorTo} from 'readline';
 
 type InnerReduceState = Formatting &
   OptionalDimensions &
@@ -25,17 +27,13 @@ type InnerReduceState = Formatting &
     cursor: Cursor;
     colorCount: ColorCount;
     res: Result[];
-    a: number;
   };
 type OuterReduceState = {
   cursor: Cursor;
   colorCount: ColorCount;
-  prevRow: Formatting & Rotation & {a: number};
+  prevRow: Formatting & Rotation;
   res: Result[][];
 };
-
-const ENCODER_REGEX = /^[eE]\d+\s*$/;
-const LED_REGEX = /^[lL]\d+\s*$/;
 
 export function rawKLEToKLELayout(kle: string): KLELayout {
   const kleArr = kle.split(',\n');
@@ -65,33 +63,16 @@ export function findPivot(keys: Result[]): Result {
 
 type GroupOptionMap<A> = {[group: string]: {[option: string]: A[]}};
 
-function getPivotPoint(a: Result) {
-  // complicated keys like ISO and BAE combine two rectangles
-  // so first identify the top-left most rectangle and then get that
-  // point
-
-  const {x, y, x2 = 0, y2 = 0} = a;
-  const isSecondRect = y2 === 0 ? x > x + x2 : y2 < 0;
-  return isSecondRect
-    ? {x: x + x2, y: y + y2}
-    : {
-        x,
-        y,
-      };
-}
-
-// New and improved algorithm: identify top and the leftmost corner of each pivot and
-// measure the distance between those two
-function calculateDelta2(a: Result, b: Result) {
-  const aPivotPoint = getPivotPoint(a);
-  const bPivotPoint = getPivotPoint(b);
+function calculateDelta(a: Result, b: Result) {
+  // Find the left corner which can be modified by x2, y2
+  const [aX2 = 0, aY2 = 0, bX2 = 0, bY2 = 0] = [a.x2, a.y2, b.x2, b.y2];
   return {
-    x: bPivotPoint.x - aPivotPoint.x,
-    y: bPivotPoint.y - aPivotPoint.y,
+    x: b.x - a.x + Math.min(0, bX2) - Math.min(0, aX2),
+    y: b.y - a.y + Math.min(0, bY2) - Math.min(0, aY2),
   };
 }
 
-export function getBoundingBox(key: Result) {
+function getBoundingBox(key: Result) {
   const {x2 = 0, y2 = 0, x, y, w = 1, h = 1, r = 0, rx = 0, ry = 0} = key;
   const {h2 = h, w2 = w} = key;
   const extraArgs: [number, number, number] = [rx, ry, r];
@@ -162,11 +143,11 @@ export function extractGroups(
             ...res,
             x: res.x - delta.x,
             y: res.y - delta.y,
-          })))(calculateDelta2(zeroPivot, findPivot(results))).map((r) =>
-          resultToVIAKey(r, origin, colorMap)
-        ), // Resolve key colors and normalize position using origin
+          })))(calculateDelta(zeroPivot, findPivot(results)))
+          .filter((r) => !r.d) // Remove decal keys
+          .map((r) => resultToVIAKey(r, origin, colorMap)), // Resolve key colors and normalize position using origin
       }),
-      {}
+      p
     );
     return {
       ...p,
@@ -177,16 +158,11 @@ export function extractGroups(
 
 // Expects pairs to be in the format "x,y" else throws exception
 function extractPair(pair: string) {
-  if (!pair) {
-    throw new Error(
-      `'Row,col' pairs must be placed in the top-left legend in the KLE keymap provided in the definition.`
-    );
-  }
   const arr = pair.split(/[，,]/);
   invariant(arr.length === 2, `${pair} is not a pair`);
   const numArr = arr.map((v) => parseInt(v, 10));
   if (numArr.some((num) => Number.isNaN(num))) {
-    throw new Error(`Invalid pair: ${pair}`);
+    throw Error(`Invalid pair: ${pair}`);
   }
   return numArr;
 }
@@ -196,7 +172,7 @@ function resultToVIAKey(
   delta: {x: number; y: number},
   colorMap: {[x: string]: KeyColorType}
 ): VIAKey {
-  const {c, t, group, ...partialKey} = result;
+  const {c, d, t, group, ...partialKey} = result;
   return {
     ...partialKey,
     x: result.x - delta.x,
@@ -206,69 +182,6 @@ function resultToVIAKey(
     color: colorMap[`${c}:${t}`] || KeyColorType.Alpha,
   };
 }
-
-/** Copied from ijprest/kle-serial
- */
-const alignmentArr = [
-  [0, 6, 2, 8, 9, 11, 3, 5, 1, 4, 7, 10], // 0 = no centering
-  [1, 7, -1, -1, 9, 11, 4, -1, -1, -1, -1, 10], // 1 = center x
-  [3, -1, 5, -1, 9, 11, -1, -1, 4, -1, -1, 10], // 2 = center y
-  [4, -1, -1, -1, 9, 11, -1, -1, -1, -1, -1, 10], // 3 = center x & y
-  [0, 6, 2, 8, 10, -1, 3, 5, 1, 4, 7, -1], // 4 = center front (default)
-  [1, 7, -1, -1, 10, -1, 4, -1, -1, -1, -1, -1], // 5 = center front & x
-  [3, -1, 5, -1, 10, -1, -1, -1, 4, -1, -1, -1], // 6 = center front & y
-  [4, -1, -1, -1, 10, -1, -1, -1, -1, -1, -1, -1], // 7 = center front & x & y
-];
-
-const normalizeLabels = (labels: string, a: number = 0) => {
-  let normalizedLabels = [] as string[];
-  const labelArr = labels.split('\n');
-  labelArr.forEach((label, idx) => {
-    normalizedLabels[alignmentArr[a][idx]] = label.trim();
-  });
-
-  return normalizedLabels;
-};
-
-enum KeyDataIndex {
-  LED = 6,
-  ROWCOL = 0,
-  GROUP = 8,
-  ENCODER = 4,
-}
-
-const getKeyData = (normalizedLabels: string[], isDecal?: boolean) => {
-  let keyData = {} as any;
-  const fakeRowCol = [-1, -1];
-  const fakeGroupOption = [-1, 0];
-
-  const encoderLabel = normalizedLabels[KeyDataIndex.ENCODER];
-  if (encoderLabel && ENCODER_REGEX.test(encoderLabel)) {
-    keyData['ei'] = +encoderLabel.slice(1);
-  }
-
-  const ledLabel = normalizedLabels[KeyDataIndex.LED];
-  if (ledLabel && LED_REGEX.test(ledLabel)) {
-    keyData['li'] = +ledLabel.slice(1);
-  }
-
-  const rowColLabel = normalizedLabels[KeyDataIndex.ROWCOL];
-  const [row, col] =
-    isDecal || (keyData['ei'] !== undefined && !rowColLabel)
-      ? fakeRowCol
-      : extractPair(rowColLabel);
-
-  const groupLabel = normalizedLabels[KeyDataIndex.GROUP];
-  const [group, option] = groupLabel
-    ? extractPair(groupLabel)
-    : fakeGroupOption;
-  return {
-    ...keyData,
-    group: {key: group, option},
-    row,
-    col,
-  };
-};
 
 export function kleLayoutToVIALayout(kle: KLELayout): VIALayout {
   const filteredKLE = kle.filter((elem) => Array.isArray(elem)) as KLEElem[][];
@@ -287,7 +200,6 @@ export function kleLayoutToVIALayout(kle: KLELayout): VIALayout {
             rx,
             ry,
             w,
-            a,
             y2,
             x2,
             w2,
@@ -300,7 +212,6 @@ export function kleLayoutToVIALayout(kle: KLELayout): VIALayout {
           if (typeof n !== 'string') {
             let obj: InnerReduceState = {
               colorCount,
-              a,
               c,
               t,
               h,
@@ -343,9 +254,6 @@ export function kleLayoutToVIALayout(kle: KLELayout): VIALayout {
                 cursor: {...obj.cursor, x: x + n.x},
               };
             }
-            if (typeof n.a === 'number') {
-              obj = {...obj, a: n.a};
-            }
             if (typeof n.c === 'string') {
               obj = {...obj, c: n.c};
             }
@@ -354,19 +262,12 @@ export function kleLayoutToVIALayout(kle: KLELayout): VIALayout {
             }
             return obj as InnerReduceState;
           } else if (typeof n === 'string') {
-            // Keys can currently be
-            // 1. Matrix
-            // 2. Matrix + Group
-            // 3. Decal
-            // 4. Encoder
-            // 5. Encoder + Group
-            // 6. Encoder + Matrix (Encoder with Click)
-            // 7. Encoder + Matrix + Group (Encoder with Click)
             const colorCountKey = `${c}:${t}`;
-            let currKey: any = {};
-
-            const keyData = getKeyData(normalizeLabels(n, a), d);
-
+            const labels = n.split('\n');
+            // Ignore row,col + requirement if key is a decal key
+            const [row, col] = d ? [0, 0] : extractPair(labels[0]);
+            const groupLabel = labels[3] || '-1,0';
+            const [group, option] = extractPair(groupLabel);
             const newColorCount = {
               ...colorCount,
               [colorCountKey]:
@@ -374,24 +275,26 @@ export function kleLayoutToVIALayout(kle: KLELayout): VIALayout {
                   ? 1
                   : colorCount[colorCountKey] + 1,
             };
-            currKey = {
-              ...currKey,
-              ...keyData,
-              ...{
-                c,
-                t,
-                x: x + rx,
-                y,
-                r,
-                rx,
-                ry,
-                d,
-                h,
-                w,
-                w2,
-                y2,
-                x2,
-                h2,
+            const currKey = {
+              c,
+              t,
+              row,
+              col,
+              x: x + rx,
+              y,
+              r,
+              rx,
+              ry,
+              d,
+              h,
+              w,
+              w2,
+              y2,
+              x2,
+              h2,
+              group: {
+                key: group,
+                option,
               },
             };
 
@@ -401,7 +304,6 @@ export function kleLayoutToVIALayout(kle: KLELayout): VIALayout {
               w: 1,
               r,
               rx,
-              a,
               ry,
               c,
               d: false,
@@ -412,7 +314,6 @@ export function kleLayoutToVIALayout(kle: KLELayout): VIALayout {
             };
           }
           return {
-            a,
             c,
             t,
             h,
@@ -445,14 +346,13 @@ export function kleLayoutToVIALayout(kle: KLELayout): VIALayout {
           r: parsedRow.r,
           rx: parsedRow.rx,
           ry: parsedRow.ry,
-          a: parsedRow.a,
         },
         res: [...prev.res, parsedRow.res],
       };
     },
     {
       cursor: {x: 0, y: 0},
-      prevRow: {c: '#cccccc', t: '#000000', r: 0, rx: 0, ry: 0, a: 0},
+      prevRow: {c: '#cccccc', t: '#000000', r: 0, rx: 0, ry: 0},
       res: [],
       colorCount: {},
     }
@@ -463,7 +363,9 @@ export function kleLayoutToVIALayout(kle: KLELayout): VIALayout {
   colorCountKeys.sort((a, b) => colorCount[b] - colorCount[a]);
   if (colorCountKeys.length > 3) {
     throw new Error(
-      'Please correct layout, too many colors:' + '\n' + inspect(colorCount)
+      'Please correct layout, too many colors:' +
+        '\n' +
+        inspect(colorCount, false, null, true)
     );
   }
 
@@ -476,13 +378,12 @@ export function kleLayoutToVIALayout(kle: KLELayout): VIALayout {
   const flatRes = res.flat();
   const defaultRes = filterGroups(flatRes);
   const boundingBoxes = defaultRes.map(getBoundingBox);
-
   const minX = Math.min(...boundingBoxes.map((b) => b.xStart));
   const minY = Math.min(...boundingBoxes.map((b) => b.yStart));
   const width = Math.max(...boundingBoxes.map((b) => b.xEnd)) - minX;
   const height = Math.max(...boundingBoxes.map((b) => b.yEnd)) - minY;
   const keys = defaultRes
-    .filter((k) => k.group.key === -1) // Remove option keys
+    .filter((k) => k.group.key === -1 && !k.d) // Remove option keys and decals
     .map((k) => resultToVIAKey(k, {x: minX, y: minY}, colorMap));
   const optionKeys = extractGroups(flatRes, {x: minX, y: minY}, colorMap);
 

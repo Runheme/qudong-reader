@@ -1,2 +1,2 @@
-import {VIADefinitionV2} from '../types.v2';
+import {VIADefinitionV2} from '../types';
 export default VIADefinitionV2;
